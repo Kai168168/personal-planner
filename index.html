@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080909"><title>日序 · 个人计划与开销</title><link rel="stylesheet" href="style.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><title>日序 · 个人计划与开销</title><link rel="stylesheet" href="style.css?v=2"></head>
 <body>
 <header class="topbar"><a class="brand" href="#">日序<span>DAY BY DAY</span></a><nav aria-label="主导航"><button class="tab active" data-view="plan">计划 <span>01</span></button><button class="tab" data-view="money">开销 <span>02</span></button></nav><span class="local-label"><i></i> 你的日常，自有节奏</span></header>
 <main>
@@ -16,8 +16,8 @@
 </section>
 <footer><span>日序 / PERSONAL SPACE</span><span>数据仅保存在当前浏览器 · <button id="export-data" class="text-button">导出备份 ↗</button> <button id="import-data" class="text-button">导入备份</button><input id="import-file" type="file" accept="application/json" hidden></span></footer>
 </main>
-<dialog id="task-dialog"><form id="task-form"><div class="dialog-heading"><h2>留给这一天的事</h2><button type="button" class="close" aria-label="关闭">×</button></div><label>任务名称<input name="title" required maxlength="100" placeholder="想完成什么？" autocomplete="off"></label><div class="form-row"><label>日期<input name="date" type="date" required></label><label>时间（可选）<input name="time" type="time"></label></div><label>备注（可选）<textarea name="note" maxlength="300" placeholder="一点提醒，一点细节"></textarea></label><label>卡片颜色<select name="color"><option value="blue">雾蓝</option><option value="purple">暗紫</option><option value="amber">暖棕</option><option value="green">松绿</option></select></label><button class="primary full" type="submit">添加到计划</button></form></dialog>
+<dialog id="task-dialog"><form id="task-form"><div class="dialog-heading"><h2>留给这一天的事</h2><button type="button" class="close" aria-label="关闭">×</button></div><label>任务名称<input name="title" required maxlength="100" placeholder="想完成什么？" autocomplete="off"></label><div class="form-row"><label>日期<input name="date" type="date" required></label><label>时间（可选）<input name="time" type="time"></label></div><label>备注（可选）<textarea name="note" maxlength="300" placeholder="一点提醒，一点细节"></textarea></label><p class="color-hint">卡片按任务名称自动配色，相同名称使用同一颜色。</p><button class="primary full" type="submit">添加到计划</button></form></dialog>
 <dialog id="asset-dialog"><form id="asset-form"><div class="dialog-heading"><h2>设置总资产</h2><button type="button" class="close" aria-label="关闭">×</button></div><p class="subtitle">输入起始资产，已记录的开销会从中扣除。</p><label>总资产（元）<input name="amount" type="number" min="0" max="999999999" step="0.01" required placeholder="0.00"></label><button class="primary full">保存资产</button></form></dialog>
 <dialog id="expense-dialog"><form id="expense-form"><div class="dialog-heading"><h2>记下这一笔</h2><button type="button" class="close" aria-label="关闭">×</button></div><label>消费内容<input name="title" required maxlength="100" placeholder="例如：午餐、地铁、买书"></label><div class="form-row"><label>金额（元）<input name="amount" type="number" min="0.01" max="999999999" step="0.01" required placeholder="0.00"></label><label>日期<input name="date" type="date" required></label></div><label>开销类型<select name="category" id="category-select"></select></label><button class="primary full">保存开销</button></form></dialog>
-<div id="toast" role="status" hidden></div><script type="module" src="app.js"></script>
+<div id="toast" role="status" hidden></div><script type="module" src="app.js?v=2"></script>
 </body></html>
