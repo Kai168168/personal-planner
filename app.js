@@ -1,4 +1,4 @@
-import {categories,dateKey,monday,addDays,money,totals,validState,taskColor} from './model.js';
+import {categories,dateKey,monday,addDays,money,totals,validState,taskColor} from './model.js?v=3';
 const $ = s => document.querySelector(s);
 const key='daybyday.v1';
 let state={version:1,assets:null,tasks:[],expenses:[]}, week=monday();
