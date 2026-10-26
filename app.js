@@ -2,6 +2,7 @@ import {categories,dateKey,monday,addDays,money,totals,validState,taskColor,vali
 import {CloudClient,validCloudConfig} from './cloud.js?v=5';
 import {mergeStates,syncMeta,sameState} from './sync-model.js?v=5';
 import {cloudConfig} from './sync-config.js?v=6';
+import {readCourseTemplate,courseTasks,newCourseTasks} from './courses.js?v=9';
 const $ = s => document.querySelector(s);
 let key='daybyday.v1';
 let editingTaskId=null;
@@ -53,6 +54,49 @@ function checkTimes(){const f=$('#task-form');f.elements.endTime.setCustomValidi
 $('#task-form [name=time]').oninput=checkTimes;$('#task-form [name=endTime]').oninput=checkTimes;
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t===b));document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!==b.dataset.view);});
 $('#new-task').onclick=()=>openTask(); $('#prev-week').onclick=()=>{week=addDays(week,-7);renderPlan();}; $('#next-week').onclick=()=>{week=addDays(week,7);renderPlan();}; $('#this-week').onclick=()=>{week=monday();renderPlan();};
+let courseImportBusy=false,courseTemplate=null;
+function previewCourses(){
+ const f=$('#course-form');
+ try{if(!courseTemplate)throw Error('请选择课表文件或打开你的课表导入链接');const candidates=courseTasks({...courseTemplate,start:f.elements.start.value,end:f.elements.end.value});$('#course-count').textContent=`共 ${candidates.length} 节课程，按所选日期范围每周重复。`;$('#import-courses-submit').textContent=`导入 ${candidates.length} 节课程`;}
+ catch(error){$('#course-count').textContent=error.message;$('#import-courses-submit').textContent='导入课程';}
+}
+function setCourseTemplate(value){
+ courseTemplate=readCourseTemplate(value);
+ $('#course-form').elements.start.value=courseTemplate.start;$('#course-form').elements.end.value=courseTemplate.end;
+ $('#course-file-label').hidden=true;
+ $('#course-preview').innerHTML=['周一','周二','周三','周四','周五','周六','周日'].map((name,day)=>{
+  const courses=courseTemplate.schedule.filter(c=>c.day===day);if(!courses.length)return '';
+  return `<div class="course-day"><strong>${name}</strong>${courses.map(c=>`<div class="course-row"><span>${escape(c.title)}</span><time>${c.time}–${c.endTime}</time><small>${escape(c.note)}</small></div>`).join('')}</div>`;
+ }).join('');previewCourses();
+}
+$('#course-file').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>65536)throw Error();setCourseTemplate(JSON.parse(await file.text()));}catch{toast('课表文件格式不正确，请重新选择');}e.target.value='';};
+$('#course-form').oninput=previewCourses;
+$('#open-courses').onclick=()=>{previewCourses();$('#course-dialog').showModal();};
+async function importCourses(start,end){
+ if(courseImportBusy)return;
+ let candidates;
+ try{if(!courseTemplate)throw Error('请先选择课表');candidates=courseTasks({...courseTemplate,start,end});}catch(error){toast(error.message);return;}
+ courseImportBusy=true;const targetKey=key;
+ $('#import-courses-submit').disabled=true;$('#import-courses-submit').textContent='正在导入…';
+ try{
+  if(cloud?.session&&navigator.onLine){
+   // Let an initial account pull finish before checking for manually entered duplicates.
+   const deadline=Date.now()+10000;
+   while(syncBusy&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,100));
+   if(!syncBusy)await Promise.race([runSync(),new Promise(resolve=>setTimeout(resolve,10000))]);
+  }
+  if(key!==targetKey){toast('账号已切换，请重新导入课程');return;}
+  const additions=newCourseTasks(state.tasks,candidates,syncMeta(state).deletedTasks);
+  for(const task of additions)state.tasks.push({...task,updatedAt:stamp()});
+  week=monday(new Date(start+'T12:00:00'));save();
+  const skipped=candidates.length-additions.length;
+  $('#course-result').textContent=`${start} — ${end}：已加入 ${additions.length} 节课程${skipped?`，跳过 ${skipped} 节已存在或已删除课程`:''}。`;
+  $('#course-result').hidden=false;$('#course-dialog').close();
+  const url=new URL(location.href);url.hash='';history.replaceState(null,'',url);
+ }catch{toast('导入失败，已有记录保留，请重试');}
+ finally{courseImportBusy=false;$('#import-courses-submit').disabled=false;previewCourses();}
+}
+$('#course-form').onsubmit=e=>{e.preventDefault();const f=e.currentTarget;importCourses(f.elements.start.value,f.elements.end.value);};
 document.querySelectorAll('.close').forEach(b=>b.onclick=()=>b.closest('dialog').close());
 $('#task-form').onsubmit=e=>{
  e.preventDefault();const f=e.currentTarget,title=f.elements.title.value.trim();checkTimes();if(!title||!f.reportValidity())return;
@@ -164,3 +208,14 @@ window.addEventListener('storage',e=>{if(e.key===key&&e.newValue){try{const next
 setInterval(()=>{if(document.visibilityState==='visible')runSync();},15000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')runSync();});
 initCloud();
+
+function loadCourseLink(){
+ const encodedCourses=new URLSearchParams(location.hash.slice(1)).get('course-import');
+ if(!encodedCourses)return;
+ try{
+  if(encodedCourses.length>90000)throw Error();
+  const bytes=Uint8Array.from(atob(encodedCourses.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+  setCourseTemplate(JSON.parse(new TextDecoder().decode(bytes)));if(!$('#course-dialog').open)$('#course-dialog').showModal();
+ }catch{toast('课表导入链接无效，请重新打开完整链接');}
+}
+window.addEventListener('hashchange',loadCourseLink);loadCourseLink();
