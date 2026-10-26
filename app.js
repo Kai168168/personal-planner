@@ -88,17 +88,24 @@ function previewSlide(card,value,dx){
 }
 let drag=null;
 $('#board').addEventListener('pointerdown',e=>{
- const card=e.target.closest('.task');if(!card||e.target.closest('button')||e.button!==0)return;
- drag={card,x:e.clientX,y:e.clientY,pointer:e.pointerId,status:state.tasks.find(t=>t.id===card.dataset.id).status,moved:false};card.setPointerCapture(e.pointerId);
+ const card=e.target.closest('.task');if(!card||e.target.closest('button')||(e.pointerType==='mouse'&&e.button!==0)||e.isPrimary===false)return;
+ drag={card,x:e.clientX,y:e.clientY,pointer:e.pointerId,status:state.tasks.find(t=>t.id===card.dataset.id).status,moved:false};
+ try{card.setPointerCapture(e.pointerId);}catch{}
 });
 $('#board').addEventListener('pointermove',e=>{
  if(!drag||drag.pointer!==e.pointerId)return;
  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
- if(!drag.moved&&Math.abs(dy)>Math.abs(dx)&&Math.abs(dy)>8){drag=null;return;}
- if(!drag.moved&&Math.abs(dx)<6)return;drag.moved=true;
+ if(!drag.moved&&Math.abs(dy)>18&&Math.abs(dy)>Math.abs(dx)*1.4){drag=null;return;}
+ if(!drag.moved&&(Math.abs(dx)<10||Math.abs(dx)<Math.abs(dy)*1.15))return;drag.moved=true;
  drag.current=Math.max(-100,Math.min(100,dx/Math.max(80,drag.card.clientWidth*.35)*100));previewSlide(drag.card,drag.current,dx);
 });
-function finishDrag(e,cancel=false){if(!drag||drag.pointer!==e.pointerId)return;const d=drag;drag=null;if(!d.moved)return;if(cancel)paintStatus(d.card,d.status);else persistStatus(d.card,d.current);}
+function finishDrag(e,cancel=false){
+ if(!drag||drag.pointer!==e.pointerId)return;const d=drag;drag=null;
+ if(cancel){if(d.moved)paintStatus(d.card,d.status);return;}
+ const dx=e.clientX-d.x,dy=e.clientY-d.y;
+ if(!d.moved&&(Math.abs(dx)<10||Math.abs(dx)<Math.abs(dy)*1.15))return;
+ persistStatus(d.card,Math.max(-100,Math.min(100,dx/Math.max(80,d.card.clientWidth*.35)*100)));
+}
 $('#board').addEventListener('pointerup',e=>finishDrag(e));$('#board').addEventListener('pointercancel',e=>finishDrag(e,true));
 $('#board').addEventListener('lostpointercapture',e=>finishDrag(e,true));
 $('#board').addEventListener('keydown',e=>{const card=e.target.closest('.task');if(!card||e.target.closest('button'))return;const values={ArrowLeft:-100,ArrowRight:100,Home:0,ArrowDown:0};if(e.key in values){e.preventDefault();persistStatus(card,values[e.key]);}});
