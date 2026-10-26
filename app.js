@@ -1,7 +1,7 @@
 import {categories,dateKey,monday,addDays,money,totals,validState,taskColor,validTimeRange,swipeStatus} from './model.js?v=5';
 import {CloudClient,validCloudConfig} from './cloud.js?v=5';
 import {mergeStates,syncMeta,sameState} from './sync-model.js?v=5';
-import {cloudConfig} from './sync-config.js?v=5';
+import {cloudConfig} from './sync-config.js?v=6';
 const $ = s => document.querySelector(s);
 let key='daybyday.v1';
 let editingTaskId=null;
