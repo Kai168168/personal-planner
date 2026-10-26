@@ -1,13 +1,13 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><title>日序 · 个人计划与开销</title><link rel="stylesheet" href="style.css?v=5"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><title>日序 · 个人计划与开销</title><link rel="stylesheet" href="style.css?v=8"></head>
 <body>
 <header class="topbar"><a class="brand" href="#">日序<span>DAY BY DAY</span></a><nav aria-label="主导航"><button class="tab active" data-view="plan">计划 <span>01</span></button><button class="tab" data-view="money">开销 <span>02</span></button></nav><button id="sync-open" class="sync-button">本地保存 · 同步</button></header>
 <main>
 <section id="plan" class="view">
 <div class="heading"><h1>计划</h1><button class="primary" id="new-task">＋ 添加任务</button></div>
 <div class="today-progress"><div class="progress-heading"><label for="today-bar">今日进度</label><span id="today-count"></span></div><div id="today-bar" role="progressbar" aria-label="今日计划完成程度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="today-fill"></div></div></div>
-<div class="board-toolbar"><div class="week-switch"><button id="prev-week" aria-label="上一周">←</button><h2 id="week-label"></h2><button id="next-week" aria-label="下一周">→</button><button id="this-week" class="small">本周</button></div><div class="gesture-hint"><span>← 未完成</span><span>中间待办</span><span>完成 →</span></div></div>
+<div class="board-toolbar"><div class="week-switch"><button id="prev-week" aria-label="上一周">←</button><h2 id="week-label"></h2><button id="next-week" aria-label="下一周">→</button><button id="this-week" class="small">本周</button></div><div class="gesture-hint"><span>点击完成 · 再次点击取消</span></div></div>
 <div class="board" id="board"></div><div class="board-footer"><span id="progress"></span></div>
 </section>
 <section id="money" class="view" hidden>
@@ -25,5 +25,5 @@
 <div id="sync-account" hidden><p id="sync-email"></p><div class="form-row"><button type="button" id="sync-now" class="primary">立即同步</button><button type="button" id="sync-logout" class="secondary">退出登录</button></div></div>
 <div id="sync-login-area"><details id="sync-setup"><summary>首次配置云端</summary><p class="subtitle">需要先创建免费的 Supabase 项目并执行数据库配置。<a href="https://github.com/Kai168168/personal-planner/blob/main/SYNC_SETUP.md" target="_blank" rel="noopener">查看设置步骤 ↗</a></p><form id="sync-config-form"><label>Project URL<input name="url" type="url" required placeholder="https://你的项目.supabase.co" autocomplete="url"></label><label>Publishable / anon 公钥<input name="key" required placeholder="sb_publishable_…" autocomplete="off"></label><p class="subtitle">仅填写前端公钥，不要填写 secret 或 service_role 私钥。配置需在两台设备保持一致。</p><button class="secondary full">保存连接配置</button></form></details>
 <form id="sync-auth-form"><label>邮箱<input name="email" type="email" required autocomplete="username"></label><label>密码<input name="password" type="password" required minlength="8" autocomplete="current-password"></label><label class="checkbox-label"><input name="mergeLocal" type="checkbox" checked> 将本机已有数据合并到此账号</label><div class="form-row"><button class="primary" id="sync-login" name="action" value="login">登录</button><button class="secondary" id="sync-signup" name="action" value="signup">注册</button></div><p class="subtitle">电脑和手机使用同一账号；联网时自动同步，离线修改在恢复连接后上传。</p></form></div></dialog>
-<div id="toast" role="status" hidden></div><script type="module" src="app.js?v=7"></script>
+<div id="toast" role="status" hidden></div><script type="module" src="app.js?v=8"></script>
 </body></html>

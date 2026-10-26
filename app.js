@@ -1,4 +1,4 @@
-import {categories,dateKey,monday,addDays,money,totals,validState,taskColor,validTimeRange,swipeStatus} from './model.js?v=5';
+import {categories,dateKey,monday,addDays,money,totals,validState,taskColor,validTimeRange} from './model.js?v=5';
 import {CloudClient,validCloudConfig} from './cloud.js?v=5';
 import {mergeStates,syncMeta,sameState} from './sync-model.js?v=5';
 import {cloudConfig} from './sync-config.js?v=6';
@@ -31,15 +31,13 @@ function updateProgress(){
  const weekly=state.tasks.filter(t=>t.date>=dateKey(week)&&t.date<dateKey(addDays(week,7)));
  $('#progress').textContent=`本周 ${weekly.length} 项 · 已完成 ${weekly.filter(t=>t.status==='done').length} 项`;
 }
-function statusValue(status){return status==='done'?100:status==='missed'?-100:0;}
-function statusText(status){return status==='done'?'已完成':status==='missed'?'未完成':'待办';}
 function renderPlan(){
  const today=dateKey();
  $('#week-label').textContent=`${week.getFullYear()}年 ${week.getMonth()+1}月${week.getDate()}日 — ${addDays(week,6).getMonth()+1}月${addDays(week,6).getDate()}日`;
  const names=['Mon 周一','Tue 周二','Wed 周三','Thu 周四','Fri 周五','Sat 周六','Sun 周日'];
  $('#board').innerHTML=names.map((name,i)=>{
   const d=addDays(week,i),date=dateKey(d),tasks=state.tasks.filter(t=>t.date===date).sort((a,b)=>a.time.localeCompare(b.time));
-  return `<section class="day ${date===today?'today':''}"><div class="day-header"><div><div class="day-name">${name}</div><div class="day-number">${String(d.getDate()).padStart(2,'0')}</div></div>${date===today?'<span class="today-badge">今天</span>':''}</div>${tasks.map(t=>`<article class="task ${t.status}" style="--task-bg:${taskColor(t.title).background};--task-edge:${taskColor(t.title).edge};--slide:${statusValue(t.status)}" data-id="${escape(t.id)}" tabindex="0" role="slider" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="${statusValue(t.status)/100}" aria-valuetext="${statusText(t.status)}" aria-label="${escape(t.title)}，左右拖动改变状态，Home 恢复待办"><div class="task-top"><h3>${escape(t.title)}</h3><div class="card-tools"><button data-action="edit" aria-label="编辑任务" class="edit-task">编辑</button><button data-action="delete" class="delete" aria-label="删除任务">×</button></div></div>${t.time?`<div class="task-time">${escape(t.time)}${t.endTime?`–${escape(t.endTime)}`:' · 未设结束时间'}</div>`:''}${t.note?`<p class="task-note">${escape(t.note)}</p>`:''}<div class="task-status">${statusText(t.status)}</div></article>`).join('')}<button class="add-day" data-date="${date}">＋ 添加任务</button></section>`;
+  return `<section class="day ${date===today?'today':''}"><div class="day-header"><div><div class="day-name">${name}</div><div class="day-number">${String(d.getDate()).padStart(2,'0')}</div></div>${date===today?'<span class="today-badge">今天</span>':''}</div>${tasks.map(t=>`<article class="task ${t.status==='done'?'done':'pending'}" style="--task-bg:${taskColor(t.title).background};--task-edge:${taskColor(t.title).edge}" data-id="${escape(t.id)}"><button type="button" class="task-toggle" data-action="toggle" aria-pressed="${t.status==='done'}" aria-label="${escape(t.title)}，${t.status==='done'?'已完成，点击恢复待办':'点击标记完成'}"><span class="task-title">${escape(t.title)}</span>${t.time?`<span class="task-time">${escape(t.time)}${t.endTime?`–${escape(t.endTime)}`:' · 未设结束时间'}</span>`:''}${t.note?`<span class="task-note">${escape(t.note)}</span>`:''}<span class="task-status">${t.status==='done'?'已完成':''}</span><span class="task-check" aria-hidden="true" ${t.status==='done'?'':'hidden'}>✓</span></button><div class="card-tools"><button data-action="edit" aria-label="编辑任务" class="edit-task">编辑</button><button data-action="delete" class="delete" aria-label="删除任务">×</button></div></article>`).join('')}<button class="add-day" data-date="${date}">＋ 添加任务</button></section>`;
  }).join('');
  updateProgress();
 }
@@ -65,50 +63,19 @@ $('#task-form').onsubmit=e=>{
 };
 $('#board').onclick=e=>{const add=e.target.closest('[data-date]');if(add){openTask(add.dataset.date);return;}const b=e.target.closest('[data-action]');if(!b)return;const id=b.closest('.task').dataset.id;updateTask(id,b.dataset.action);};
 function updateTask(id,action){
+ if(action==='toggle'){toggleTask(id);return;}
  if(action==='edit'){const t=state.tasks.find(t=>t.id===id);openTask(t.date,t);return;}
  if(action==='delete'){if(!confirm('删除这项任务？'))return;syncMeta(state).deletedTasks[id]=stamp();state.tasks=state.tasks.filter(t=>t.id!==id);save();}
 }
-function paintStatus(card,status){
- card.style.removeProperty('--preview-bg');card.style.removeProperty('--drag-x');
- card.classList.remove('dragging','done','missed','pending');card.classList.add(status);
- card.setAttribute('aria-valuenow',statusValue(status)/100);card.setAttribute('aria-valuetext',statusText(status));
- card.querySelector('.task-status').textContent=statusText(status);
+function toggleTask(id){
+ const task=state.tasks.find(t=>t.id===id);if(!task)return;
+ task.status=task.status==='done'?'pending':'done';task.updatedAt=stamp();
+ const card=[...$('#board').querySelectorAll('.task')].find(c=>c.dataset.id===id),done=task.status==='done';
+ card.classList.toggle('done',done);card.classList.toggle('pending',!done);
+ const button=card.querySelector('.task-toggle');button.setAttribute('aria-pressed',String(done));button.setAttribute('aria-label',`${task.title}，${done?'已完成，点击恢复待办':'点击标记完成'}`);
+ card.querySelector('.task-status').textContent=done?'已完成':'';card.querySelector('.task-check').hidden=!done;
+ writeLocal();queueSync();updateProgress();
 }
-function persistStatus(card,value){
- const task=state.tasks.find(t=>t.id===card.dataset.id);if(!task)return;
- task.status=swipeStatus(value);task.updatedAt=stamp();paintStatus(card,task.status);
- writeLocal();queueSync();
- updateProgress();
-}
-function previewSlide(card,value,dx){
- card.classList.add('dragging');card.style.setProperty('--drag-x',`${Math.max(-28,Math.min(28,dx*.18))}px`);
- const status=swipeStatus(value);
- card.style.setProperty('--preview-bg',status==='pending'?'var(--task-bg)':`color-mix(in srgb, ${value>=0?'#0c3023':'#35171d'} ${Math.min(100,Math.abs(value))}%, var(--task-bg))`);
- card.querySelector('.task-status').textContent=statusText(status);
-}
-let drag=null;
-$('#board').addEventListener('pointerdown',e=>{
- const card=e.target.closest('.task');if(!card||e.target.closest('button')||(e.pointerType==='mouse'&&e.button!==0)||e.isPrimary===false)return;
- drag={card,x:e.clientX,y:e.clientY,pointer:e.pointerId,status:state.tasks.find(t=>t.id===card.dataset.id).status,moved:false};
- try{card.setPointerCapture(e.pointerId);}catch{}
-});
-$('#board').addEventListener('pointermove',e=>{
- if(!drag||drag.pointer!==e.pointerId)return;
- const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
- if(!drag.moved&&Math.abs(dy)>18&&Math.abs(dy)>Math.abs(dx)*1.4){drag=null;return;}
- if(!drag.moved&&(Math.abs(dx)<10||Math.abs(dx)<Math.abs(dy)*1.15))return;drag.moved=true;
- drag.current=Math.max(-100,Math.min(100,dx/Math.max(80,drag.card.clientWidth*.35)*100));previewSlide(drag.card,drag.current,dx);
-});
-function finishDrag(e,cancel=false){
- if(!drag||drag.pointer!==e.pointerId)return;const d=drag;drag=null;
- if(cancel){if(d.moved)paintStatus(d.card,d.status);return;}
- const dx=e.clientX-d.x,dy=e.clientY-d.y;
- if(!d.moved&&(Math.abs(dx)<10||Math.abs(dx)<Math.abs(dy)*1.15))return;
- persistStatus(d.card,Math.max(-100,Math.min(100,dx/Math.max(80,d.card.clientWidth*.35)*100)));
-}
-$('#board').addEventListener('pointerup',e=>finishDrag(e));$('#board').addEventListener('pointercancel',e=>finishDrag(e,true));
-$('#board').addEventListener('lostpointercapture',e=>finishDrag(e,true));
-$('#board').addEventListener('keydown',e=>{const card=e.target.closest('.task');if(!card||e.target.closest('button'))return;const values={ArrowLeft:-100,ArrowRight:100,Home:0,ArrowDown:0};if(e.key in values){e.preventDefault();persistStatus(card,values[e.key]);}});
 $('#edit-assets').onclick=()=>{const f=$('#asset-form');f.elements.amount.value=state.assets===null?'':state.assets/100;$('#asset-dialog').showModal();};
 $('#asset-form').onsubmit=e=>{e.preventDefault();state.assets=Math.round(Number(e.currentTarget.elements.amount.value)*100);syncMeta(state).assetsAt=stamp();save();$('#asset-dialog').close();toast('总资产已更新');};
 $('#category-select').innerHTML=categories.map(c=>`<option>${c}</option>`).join('');
@@ -138,17 +105,15 @@ function queueSync(){
 async function runSync(){
  if(!cloud?.session)return;
  if(syncBusy){syncAgain=true;return;}
- if(drag){queueSync();return;}
  if(!navigator.onLine){syncBadge('离线 · 待同步');syncMessage('当前离线，修改已保存在本机，联网后自动同步。');return;}
  const client=cloud,accountKey=key;syncBusy=true;
  syncBadge('同步中');
  try{
    const snapshot=structuredClone(state),result=await client.exchange(snapshot);
    if(cloud!==client||key!==accountKey||!cloud.session)return;
-   if(drag){syncAgain=true;return;}
    const merged=mergeStates(state,result);
    const changed=!sameState(merged,state);state=merged;writeLocal();
-   if(changed&&!drag)render();
+   if(changed)render();
    if(!sameState(snapshot,state)&&!sameState(state,result))syncAgain=true;
    syncBadge('已同步');syncMessage('已同步 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
  }catch(error){if(cloud===client&&key===accountKey){syncBadge('同步失败 · 重试');syncMessage(error instanceof TypeError?'连接失败，本地数据已保留。请检查网络和项目配置。':error.message);}}
@@ -195,7 +160,7 @@ function initCloud(){
  syncUI();if(cloud?.session)activateAccount(false);
 }
 window.addEventListener('online',runSync);
-window.addEventListener('storage',e=>{if(e.key===key&&e.newValue){try{const next=JSON.parse(e.newValue);if(validState(next)){state=mergeStates(state,next);if(!drag)render();queueSync();}}catch{}}});
+window.addEventListener('storage',e=>{if(e.key===key&&e.newValue){try{const next=JSON.parse(e.newValue);if(validState(next)){state=mergeStates(state,next);render();queueSync();}}catch{}}});
 setInterval(()=>{if(document.visibilityState==='visible')runSync();},15000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')runSync();});
 initCloud();
