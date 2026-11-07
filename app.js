@@ -1,4 +1,4 @@
-import {categories,dateKey,monday,addDays,money,totals,validState,taskColor,validTimeRange} from './model.js?v=5';
+import {categories,dateKey,monday,addDays,money,totals,validState,taskColor,validTimeRange,isoWeek} from './model.js?v=10';
 import {CloudClient,validCloudConfig} from './cloud.js?v=5';
 import {mergeStates,syncMeta,sameState} from './sync-model.js?v=5';
 import {cloudConfig} from './sync-config.js?v=6';
@@ -30,17 +30,45 @@ function updateProgress(){
  $('#today-bar').setAttribute('aria-valuetext',`今日 ${tasks.length} 项，已完成 ${done} 项`);
  $('#today-fill').style.width=percent+'%';
  const weekly=state.tasks.filter(t=>t.date>=dateKey(week)&&t.date<dateKey(addDays(week,7)));
- $('#progress').textContent=`本周 ${weekly.length} 项 · 已完成 ${weekly.filter(t=>t.status==='done').length} 项`;
+ $('#progress').textContent=`${dateKey(week)===dateKey(monday())?'本周':'该周'} ${weekly.length} 项 · 已完成 ${weekly.filter(t=>t.status==='done').length} 项`;
 }
+let weeksBefore=4,weeksAfter=8,lastSidebarWeek=null;
+function renderWeeks(){
+ const todayWeek=dateKey(monday()),selected=dateKey(week),anchor=monday();
+ const dates=new Set([selected]);
+ for(let i=-weeksBefore;i<=weeksAfter;i++)dates.add(dateKey(addDays(anchor,i*7)));
+ for(const task of state.tasks)dates.add(dateKey(monday(new Date(task.date+'T12:00:00'))));
+ const oldScroll=$('#week-list').scrollTop;
+ $('#week-list').innerHTML=[...dates].sort().map(key=>{
+  const d=new Date(key+'T12:00:00'),end=addDays(d,6),info=isoWeek(d),tasks=state.tasks.filter(t=>t.date>=key&&t.date<dateKey(addDays(d,7))),done=tasks.filter(t=>t.status==='done').length;
+  const titles=[...new Set(tasks.map(t=>t.title))].slice(0,5);
+  return `<button class="week-option ${key===selected?'selected':''}" data-week="${key}" aria-pressed="${key===selected}"><span class="week-option-top"><strong>${info.year} · W${String(info.week).padStart(2,'0')}</strong>${key===todayWeek?'<em>本周</em>':''}</span><span class="week-option-dates">${d.getMonth()+1}月${d.getDate()}日 — ${end.getMonth()+1}月${end.getDate()}日</span><span class="week-option-bottom"><span>${done}/${tasks.length} 已完成</span><span class="week-dots" aria-hidden="true">${titles.map(title=>`<i style="background:${taskColor(title).edge}"></i>`).join('')}</span></span><span class="week-mini-progress" aria-hidden="true"><i style="width:${tasks.length?done/tasks.length*100:0}%"></i></span></button>`;
+ }).join('');
+ const list=$('#week-list');list.scrollTop=oldScroll;
+ if(lastSidebarWeek!==selected){const active=list.querySelector('.selected');if(active)list.scrollTop+=active.getBoundingClientRect().top-list.getBoundingClientRect().top-(list.clientHeight-active.clientHeight)/2;lastSidebarWeek=selected;}
+ $('#week-jump').value=selected;
+}
+function closeWeekMenu(){const sidebar=$('#week-sidebar');sidebar.classList.remove('open');$('#week-backdrop').hidden=true;$('#open-weeks').setAttribute('aria-expanded','false');}
+function chooseWeek(date){
+ week=monday(date);renderPlan();$('#board').scrollLeft=0;closeWeekMenu();
+ const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ if(!reduce)$('#board').querySelectorAll('.day').forEach((day,i)=>day.animate([{opacity:0,transform:'translateY(9px)'},{opacity:1,transform:'translateY(0)'}],{duration:320,delay:i*25,easing:'cubic-bezier(.2,.8,.2,1)'}));
+}
+$('#week-list').onclick=e=>{const button=e.target.closest('[data-week]');if(button)chooseWeek(new Date(button.dataset.week+'T12:00:00'));};
+$('#more-weeks-before').onclick=()=>{weeksBefore+=4;renderWeeks();};$('#more-weeks-after').onclick=()=>{weeksAfter+=4;renderWeeks();$('#week-list').scrollTop=$('#week-list').scrollHeight;};
+$('#sidebar-today').onclick=()=>chooseWeek(new Date());
+$('#week-jump').onchange=e=>{if(e.target.value)chooseWeek(new Date(e.target.value+'T12:00:00'));};
+$('#open-weeks').onclick=()=>{$('#week-sidebar').classList.add('open');$('#week-backdrop').hidden=false;$('#open-weeks').setAttribute('aria-expanded','true');$('#close-weeks').focus();};
+$('#close-weeks').onclick=closeWeekMenu;$('#week-backdrop').onclick=closeWeekMenu;document.addEventListener('keydown',e=>{if(e.key==='Escape')closeWeekMenu();});
 function renderPlan(){
  const today=dateKey();
  $('#week-label').textContent=`${week.getFullYear()}年 ${week.getMonth()+1}月${week.getDate()}日 — ${addDays(week,6).getMonth()+1}月${addDays(week,6).getDate()}日`;
  const names=['Mon 周一','Tue 周二','Wed 周三','Thu 周四','Fri 周五','Sat 周六','Sun 周日'];
  $('#board').innerHTML=names.map((name,i)=>{
   const d=addDays(week,i),date=dateKey(d),tasks=state.tasks.filter(t=>t.date===date).sort((a,b)=>a.time.localeCompare(b.time));
-  return `<section class="day ${date===today?'today':''}"><div class="day-header"><div><div class="day-name">${name}</div><div class="day-number">${String(d.getDate()).padStart(2,'0')}</div></div>${date===today?'<span class="today-badge">今天</span>':''}</div>${tasks.map(t=>`<article class="task ${t.status==='done'?'done':'pending'}" style="--task-bg:${taskColor(t.title).background};--task-edge:${taskColor(t.title).edge}" data-id="${escape(t.id)}"><button type="button" class="task-toggle" data-action="toggle" aria-pressed="${t.status==='done'}" aria-label="${escape(t.title)}，${t.status==='done'?'已完成，点击恢复待办':'点击标记完成'}"><span class="task-title">${escape(t.title)}</span>${t.time?`<span class="task-time">${escape(t.time)}${t.endTime?`–${escape(t.endTime)}`:' · 未设结束时间'}</span>`:''}${t.note?`<span class="task-note">${escape(t.note)}</span>`:''}<span class="task-status">${t.status==='done'?'已完成':''}</span><span class="task-check" aria-hidden="true" ${t.status==='done'?'':'hidden'}>✓</span></button><div class="card-tools"><button data-action="edit" aria-label="编辑任务" class="edit-task">编辑</button><button data-action="delete" class="delete" aria-label="删除任务">×</button></div></article>`).join('')}<button class="add-day" data-date="${date}">＋ 添加任务</button></section>`;
+  return `<section class="day ${date===today?'today':''}"><div class="day-header"><div><div class="day-name">${name}</div><div class="day-number">${String(d.getDate()).padStart(2,'0')}</div></div>${date===today?'<span class="today-badge">今天</span>':''}</div>${tasks.map(t=>`<article class="task ${t.status==='done'?'done':'pending'}" style="--task-bg:${taskColor(t.title).background};--task-edge:${taskColor(t.title).edge};--task-tint:${taskColor(t.title).tint}" data-id="${escape(t.id)}"><button type="button" class="task-toggle" data-action="toggle" aria-pressed="${t.status==='done'}" aria-label="${escape(t.title)}，${t.status==='done'?'已完成，点击恢复待办':'点击标记完成'}"><span class="task-title">${escape(t.title)}</span>${t.time?`<span class="task-time">${escape(t.time)}${t.endTime?`–${escape(t.endTime)}`:' · 未设结束时间'}</span>`:''}${t.note?`<span class="task-note">${escape(t.note)}</span>`:''}<span class="task-status">${t.status==='done'?'已完成':''}</span><span class="task-check" aria-hidden="true" ${t.status==='done'?'':'hidden'}>✓</span></button><div class="card-tools"><button data-action="edit" aria-label="编辑任务" class="edit-task">编辑</button><button data-action="delete" class="delete" aria-label="删除任务">×</button></div></article>`).join('')}<button class="add-day" data-date="${date}">＋ 添加任务</button></section>`;
  }).join('');
- updateProgress();
+ updateProgress();renderWeeks();
 }
 const icons=['◒','↗','▧','⌂','♫','▤','♡','⋯'];
 function renderMoney(){ const t=totals(state.expenses,state.assets); $('#assets-value').textContent=state.assets===null?'待设置':money(state.assets); $('#balance-value').textContent=t.balance===null?'—':money(t.balance); $('#week-value').textContent=money(t.week); $('#month-value').textContent=money(t.month); $('#month-caption').textContent=`${new Date().getFullYear()}年 ${new Date().getMonth()+1}月`; $('#expense-total').textContent=`共 ${state.expenses.length} 笔 · ${money(t.all)}`; $('#expense-list').innerHTML=[...state.expenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>`<div class="expense-row"><span class="category-icon">${icons[categories.indexOf(e.category)]}</span><div class="expense-info"><strong>${escape(e.title)}</strong><small>${escape(e.date)} · ${escape(e.category)}</small></div><span class="expense-amount">−${money(e.amount)}</span><button class="delete-expense" data-id="${escape(e.id)}" aria-label="删除开销">×</button></div>`).join('')||'<p class="empty">暂无开销记录</p>'; const groups=categories.map(category=>({category,amount:state.expenses.filter(e=>e.category===category&&e.date.startsWith(dateKey().slice(0,7))).reduce((s,e)=>s+e.amount,0)})).filter(g=>g.amount).sort((a,b)=>b.amount-a.amount); $('#categories').innerHTML=groups.map(g=>`<div class="category-row"><div class="category-label"><span>${g.category}</span><span>${money(g.amount)} · ${Math.round(g.amount/t.month*100)}%</span></div><div class="bar"><i style="width:${g.amount/t.month*100}%"></i></div></div>`).join('')||'<p class="empty">本月暂无开销</p>'; }
@@ -53,7 +81,7 @@ function openTask(date=dateKey(),task=null){
 function checkTimes(){const f=$('#task-form');f.elements.endTime.setCustomValidity(validTimeRange(f.elements.time.value,f.elements.endTime.value)?'':'结束时间必须晚于开始时间');}
 $('#task-form [name=time]').oninput=checkTimes;$('#task-form [name=endTime]').oninput=checkTimes;
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t===b));document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!==b.dataset.view);});
-$('#new-task').onclick=()=>openTask(); $('#prev-week').onclick=()=>{week=addDays(week,-7);renderPlan();}; $('#next-week').onclick=()=>{week=addDays(week,7);renderPlan();}; $('#this-week').onclick=()=>{week=monday();renderPlan();};
+$('#new-task').onclick=()=>openTask(); $('#prev-week').onclick=()=>chooseWeek(addDays(week,-7)); $('#next-week').onclick=()=>chooseWeek(addDays(week,7)); $('#this-week').onclick=()=>chooseWeek(new Date());
 let courseImportBusy=false,courseTemplate=null;
 function previewCourses(){
  const f=$('#course-form');
@@ -118,7 +146,8 @@ function toggleTask(id){
  card.classList.toggle('done',done);card.classList.toggle('pending',!done);
  const button=card.querySelector('.task-toggle');button.setAttribute('aria-pressed',String(done));button.setAttribute('aria-label',`${task.title}，${done?'已完成，点击恢复待办':'点击标记完成'}`);
  card.querySelector('.task-status').textContent=done?'已完成':'';card.querySelector('.task-check').hidden=!done;
- writeLocal();queueSync();updateProgress();
+ writeLocal();queueSync();updateProgress();renderWeeks();
+ if(!matchMedia('(prefers-reduced-motion: reduce)').matches)card.animate([{transform:'scale(1)'},{transform:'scale(0.975)'},{transform:'scale(1)'}],{duration:260,easing:'ease-out'});
 }
 $('#edit-assets').onclick=()=>{const f=$('#asset-form');f.elements.amount.value=state.assets===null?'':state.assets/100;$('#asset-dialog').showModal();};
 $('#asset-form').onsubmit=e=>{e.preventDefault();state.assets=Math.round(Number(e.currentTarget.elements.amount.value)*100);syncMeta(state).assetsAt=stamp();save();$('#asset-dialog').close();toast('总资产已更新');};

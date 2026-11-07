@@ -20,11 +20,18 @@ export function validState(s) {
 // Titles share a stable color across dates, reloads, and imported backups.
 export function taskColor(title) {
   const normalized = title.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('zh-CN');
-  let hash = 2166136261;
-  for (const char of normalized) { hash = Math.imul(hash ^ char.codePointAt(0), 16777619) >>> 0; }
-  const hue = hash % 360;
-  return { background: `hsl(${hue} 42% 13%)`, edge: `hsl(${hue} 62% 57%)` };
+  let hash=5381;
+  for(const char of normalized)hash=(Math.imul(hash,33)^char.codePointAt(0))>>>0;
+  const hue=Math.round((hash*0.618033988749895%1)*360)%360;
+  return {background:`hsl(${hue} 66% 18%)`,edge:`hsl(${hue} 90% 69%)`,tint:`hsl(${(hue+36)%360} 64% 11%)`};
 }
 
 export function validTimeRange(start,end){const time=v=>typeof v==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(v);return time(start)&&time(end)&&end>start;}
 export function swipeStatus(value){return value>=55?'done':value<=-55?'missed':'pending';}
+
+export function isoWeek(date){
+ const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()));
+ d.setUTCDate(d.getUTCDate()+4-(d.getUTCDay()||7));
+ const year=d.getUTCFullYear(),start=new Date(Date.UTC(year,0,1));
+ return {year,week:Math.ceil((((d-start)/86400000)+1)/7)};
+}
