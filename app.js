@@ -1,11 +1,14 @@
-import {dateKey,monday,addDays,validState,taskColor,validTimeRange,isoWeek} from './model.js?v=10';
+import {dateKey,monday,addDays,validState,taskColor,validTimeRange,isoWeek} from './model.js?v=14';
 import {CloudClient,validCloudConfig} from './cloud.js?v=5';
 import {mergeStates,syncMeta,sameState} from './sync-model.js?v=5';
 import {cloudConfig} from './sync-config.js?v=6';
 import {readCourseTemplate,courseTasks,newCourseTasks,replacedCourseTasks,tasksForCourse} from './courses.js?v=13';
+import {getTaskDetail,readDetailPayload,planDetailUpdates} from './details.js?v=14';
 const $ = s => document.querySelector(s);
 let key='daybyday.v1';
 let editingTaskId=null,pendingCourseRemoval=null,courseDeletionBusy=false;
+let activeDetailId=null,detailPayload=null,detailImportBusy=false;
+let heldTask=null,suppressedTaskClick=null,detailClosing=false,detailSourceRect=null,previousBodyOverflow='';
 const guestKey='daybyday.v1';
 let cloud=null,syncTimer,syncBusy=false,syncAgain=false,lastStamp=0;
 let state={version:1,assets:null,tasks:[],expenses:[]}, week=monday();
@@ -66,11 +69,11 @@ function renderPlan(){
  const names=['Mon 周一','Tue 周二','Wed 周三','Thu 周四','Fri 周五','Sat 周六','Sun 周日'];
  $('#board').innerHTML=names.map((name,i)=>{
   const d=addDays(week,i),date=dateKey(d),tasks=state.tasks.filter(t=>t.date===date).sort((a,b)=>a.time.localeCompare(b.time));
-  return `<section class="day ${date===today?'today':''}"><div class="day-header"><div><div class="day-name">${name}</div><div class="day-number">${String(d.getDate()).padStart(2,'0')}</div></div>${date===today?'<span class="today-badge">今天</span>':''}</div>${tasks.map(t=>`<article class="task ${t.status==='done'?'done':'pending'}" style="--task-bg:${taskColor(t.title).background};--task-edge:${taskColor(t.title).edge};--task-tint:${taskColor(t.title).tint}" data-id="${escape(t.id)}"><button type="button" class="task-toggle" data-action="toggle" aria-pressed="${t.status==='done'}" aria-label="${escape(t.title)}，${t.status==='done'?'已完成，点击恢复待办':'点击标记完成'}"><span class="task-title">${escape(t.title)}</span>${t.time?`<span class="task-time">${escape(t.time)}${t.endTime?`–${escape(t.endTime)}`:' · 未设结束时间'}</span>`:''}${t.note?`<span class="task-note">${escape(t.note)}</span>`:''}<span class="task-status">${t.status==='done'?'已完成':''}</span><span class="task-check" aria-hidden="true" ${t.status==='done'?'':'hidden'}>✓</span></button><div class="card-tools"><button data-action="edit" aria-label="编辑任务" class="edit-task">编辑</button><button data-action="delete" class="delete" aria-label="删除任务">×</button></div></article>`).join('')}<button class="add-day" data-date="${date}">＋ 添加任务</button></section>`;
+  return `<section class="day ${date===today?'today':''}"><div class="day-header"><div><div class="day-name">${name}</div><div class="day-number">${String(d.getDate()).padStart(2,'0')}</div></div>${date===today?'<span class="today-badge">今天</span>':''}</div>${tasks.map(t=>`<article class="task ${t.status==='done'?'done':'pending'}" style="--task-bg:${taskColor(t.title).background};--task-edge:${taskColor(t.title).edge};--task-tint:${taskColor(t.title).tint}" data-id="${escape(t.id)}"><button type="button" class="task-toggle" data-action="toggle" ${getTaskDetail(t)?'aria-keyshortcuts="Alt+Enter" title="长按查看详情 · Alt+Enter"':''} aria-pressed="${t.status==='done'}" aria-label="${escape(t.title)}，${t.status==='done'?'已完成，点击恢复待办':'点击标记完成'}"><span class="task-title">${escape(t.title)}</span>${t.time?`<span class="task-time">${escape(t.time)}${t.endTime?`–${escape(t.endTime)}`:' · 未设结束时间'}</span>`:''}${t.note?`<span class="task-note">${escape(t.note)}</span>`:''}${getTaskDetail(t)?'<span class="task-detail-hint" aria-hidden="true">长按详情</span>':''}<span class="task-status">${t.status==='done'?'已完成':''}</span><span class="task-check" aria-hidden="true" ${t.status==='done'?'':'hidden'}>✓</span></button><div class="card-tools"><button data-action="edit" aria-label="编辑任务" class="edit-task">编辑</button><button data-action="delete" class="delete" aria-label="删除任务">×</button></div></article>`).join('')}<button class="add-day" data-date="${date}">＋ 添加任务</button></section>`;
  }).join('');
  updateProgress();renderWeeks();
 }
-function render(){renderPlan();if(pendingCourseRemoval)previewCourseRemoval();}
+function render(){cancelTaskHold();renderPlan();if(pendingCourseRemoval)previewCourseRemoval();if(activeDetailId)refreshTaskDetail();if(detailPayload&&$('#detail-import-dialog').open)previewDetailImport();}
 function openTask(date=dateKey(),task=null){
  const f=$('#task-form');f.reset();editingTaskId=task?.id||null;f.elements.date.value=task?.date||date;
  for(const name of ['title','time','endTime','note'])f.elements[name].value=task?.[name]||'';
@@ -163,7 +166,65 @@ $('#task-form').onsubmit=e=>{
  else state.tasks.push({id:crypto.randomUUID(),...fields,color:'blue',status:'pending'});
  week=monday(new Date(fields.date+'T12:00:00'));save();$('#task-dialog').close();
 };
-$('#board').onclick=e=>{const add=e.target.closest('[data-date]');if(add){openTask(add.dataset.date);return;}const b=e.target.closest('[data-action]');if(!b)return;const id=b.closest('.task').dataset.id;updateTask(id,b.dataset.action);};
+$('#board').onclick=e=>{const toggle=e.target.closest('.task-toggle');if(toggle&&suppressedTaskClick&&toggle.closest('.task').dataset.id===suppressedTaskClick.id&&Date.now()<suppressedTaskClick.until){e.preventDefault();suppressedTaskClick=null;return;}const add=e.target.closest('[data-date]');if(add){openTask(add.dataset.date);return;}const b=e.target.closest('[data-action]');if(!b)return;const id=b.closest('.task').dataset.id;updateTask(id,b.dataset.action);};
+function cancelTaskHold(){if(!heldTask)return;clearTimeout(heldTask.timer);heldTask.button.classList.remove('is-holding');heldTask=null;}
+$('#board').addEventListener('pointerdown',e=>{
+ const button=e.target.closest('.task-toggle');if(!button)return;
+ if(e.isPrimary===false){cancelTaskHold();return;}if(e.pointerType==='mouse'&&e.button!==0)return;
+ cancelTaskHold();suppressedTaskClick=null;
+ const held={button,id:button.closest('.task').dataset.id,pointer:e.pointerId,x:e.clientX,y:e.clientY};heldTask=held;
+ button.classList.add('is-holding');
+ held.timer=setTimeout(()=>{
+  if(heldTask!==held)return;
+  suppressedTaskClick={id:held.id,until:Date.now()+1800};button.classList.remove('is-holding');
+  openTaskDetail(held.id);
+ },500);
+});
+window.addEventListener('pointermove',e=>{if(heldTask&&heldTask.pointer===e.pointerId&&Math.hypot(e.clientX-heldTask.x,e.clientY-heldTask.y)>10){suppressedTaskClick={id:heldTask.id,until:Date.now()+1800};cancelTaskHold();}},{passive:true});
+window.addEventListener('pointerup',cancelTaskHold,{passive:true});window.addEventListener('pointercancel',cancelTaskHold,{passive:true});
+window.addEventListener('scroll',cancelTaskHold,{capture:true,passive:true});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible')cancelTaskHold();});
+$('#board').addEventListener('contextmenu',e=>{const button=e.target.closest('.task-toggle');if(!button)return;e.preventDefault();cancelTaskHold();const id=button.closest('.task').dataset.id;suppressedTaskClick={id,until:Date.now()+1800};openTaskDetail(id);});
+$('#board').addEventListener('keydown',e=>{const button=e.target.closest('.task-toggle');if(!button)return;if((e.key==='Enter'&&e.altKey)||e.key==='ContextMenu'||(e.key==='F10'&&e.shiftKey)){e.preventDefault();openTaskDetail(button.closest('.task').dataset.id);}});
+function positionTaskDetail(){
+ const panel=$('#task-detail-panel'),width=Math.min(410,innerWidth-32),rect=detailSourceRect||{left:innerWidth/2,width:0,top:innerHeight/4};
+ panel.style.width=width+'px';panel.style.left=Math.max(16,Math.min(innerWidth-width-16,rect.left+rect.width/2-width/2))+'px';
+ panel.style.top=Math.max(16,Math.min(innerHeight-panel.offsetHeight-16,rect.top-6))+'px';
+}
+function refreshTaskDetail(){
+ const task=state.tasks.find(t=>t.id===activeDetailId);
+ if(!task||!getTaskDetail(task)){closeTaskDetail();return;}
+ const colors=taskColor(task.title),preview=$('#task-detail-preview');
+ preview.classList.toggle('done',task.status==='done');preview.querySelector('.detail-overline').textContent=task.status==='done'?'已完成 · 计划详情':'计划详情';
+ preview.style.setProperty('--task-bg',colors.background);preview.style.setProperty('--task-edge',colors.edge);preview.style.setProperty('--task-tint',colors.tint);
+ $('#task-detail-title').textContent=task.title;$('#task-detail-time').textContent=task.date+(task.time?' · '+task.time+(task.endTime?'–'+task.endTime:''):'');
+ $('#task-detail-short').textContent=task.note;$('#task-detail-short').hidden=!task.note;
+ $('#task-detail-text').textContent=getTaskDetail(task);positionTaskDetail();
+}
+function openTaskDetail(id){
+ const task=state.tasks.find(t=>t.id===id);
+ if(!task||!getTaskDetail(task)){toast('此任务暂无长按详情，可通过 GPT 添加');return;}
+ if($('#task-detail-dialog').open&&activeDetailId===id)return;
+ const source=[...$('#board').querySelectorAll('.task')].find(card=>card.dataset.id===id);detailSourceRect=source?.getBoundingClientRect();activeDetailId=id;detailClosing=false;
+ refreshTaskDetail();if(!$('#task-detail-dialog').open){previousBodyOverflow=document.body.style.overflow;document.body.style.overflow='hidden';$('#task-detail-dialog').showModal();}positionTaskDetail();
+ if(!matchMedia('(prefers-reduced-motion: reduce)').matches)$('#task-detail-panel').animate([{opacity:0,transform:'translateY(10px) scale(.94)'},{opacity:1,transform:'translateY(0) scale(1)'}],{duration:300,easing:'cubic-bezier(.16,1,.3,1)'});
+}
+function finishTaskDetailClose(){
+ const id=activeDetailId;activeDetailId=null;detailClosing=false;document.body.style.overflow=previousBodyOverflow;
+ if($('#task-detail-dialog').open)$('#task-detail-dialog').close();
+ const card=[...$('#board').querySelectorAll('.task')].find(c=>c.dataset.id===id);card?.querySelector('.task-toggle').focus({preventScroll:true});
+}
+function closeTaskDetail(){
+ if(!$('#task-detail-dialog').open||detailClosing)return;detailClosing=true;cancelTaskHold();
+ if(matchMedia('(prefers-reduced-motion: reduce)').matches){finishTaskDetailClose();return;}
+ const animation=$('#task-detail-panel').animate([{opacity:1,transform:'scale(1)'},{opacity:0,transform:'scale(.97)'}],{duration:140,easing:'ease-out'});
+ animation.finished.then(finishTaskDetailClose).catch(finishTaskDetailClose);
+}
+$('#task-detail-close').onclick=closeTaskDetail;
+$('#task-detail-dialog').onclick=e=>{if(e.target===$('#task-detail-dialog'))closeTaskDetail();};
+$('#task-detail-dialog').addEventListener('cancel',e=>{e.preventDefault();closeTaskDetail();});
+$('#task-detail-dialog').addEventListener('close',()=>{if(!$('#task-detail-dialog').open&&activeDetailId)finishTaskDetailClose();});
+window.addEventListener('resize',()=>{if(activeDetailId)positionTaskDetail();});
 function updateTask(id,action){
  if(action==='toggle'){toggleTask(id);return;}
  if(action==='edit'){const t=state.tasks.find(t=>t.id===id);openTask(t.date,t);return;}
@@ -262,8 +323,34 @@ setInterval(()=>{if(document.visibilityState==='visible')runSync();},15000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')runSync();});
 initCloud();
 
+function previewDetailImport(){
+ const planned=planDetailUpdates(state.tasks,detailPayload);
+ $('#detail-import-summary').textContent=`匹配 ${planned.matched} 项任务，将更新 ${planned.changes.length} 项详细备注${planned.unmatched?`；${planned.unmatched} 条说明未找到匹配任务`:''}。短备注、时间和完成状态保持原样，除非导入内容明确包含短备注更新。${planned.matched?'':'请在保存计划的同一浏览器或账号打开，并核对任务名称。'}`;
+ $('#detail-import-preview').innerHTML=detailPayload.entries.map(entry=>`<section class="detail-import-entry"><strong>${escape(entry.match.title||entry.match.id)}</strong><p>${escape(entry.text||'清除详细备注')}</p></section>`).join('');
+ $('#detail-import-submit').disabled=detailImportBusy||!planned.changes.length;
+ $('#detail-import-submit').textContent=detailImportBusy?'正在更新…':`更新 ${planned.changes.length} 项详情`;
+}
+$('#detail-import-form').onsubmit=async e=>{
+ e.preventDefault();if(!detailPayload||detailImportBusy)return;detailImportBusy=true;const target=key;previewDetailImport();
+ try{
+  if(cloud?.session&&navigator.onLine){const deadline=Date.now()+10000;while(syncBusy&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,100));if(!syncBusy)await Promise.race([runSync(),new Promise(resolve=>setTimeout(resolve,10000))]);}
+  if(key!==target){toast('账号已切换，请重新打开详情更新链接');return;}
+  const plan=planDetailUpdates(state.tasks,detailPayload);
+  if(plan.changes.length){
+   localStorage.setItem(key+'.before-detail-import',JSON.stringify(state));
+   for(const change of plan.changes){const task=state.tasks.find(t=>t.id===change.id);task.gptDetail={source:'gpt',text:change.text};if(change.note!==undefined)task.note=change.note;task.updatedAt=stamp();}
+   save();
+  }
+  $('#detail-import-dialog').close();toast(`已更新 ${plan.changes.length} 项长按详情`);
+  const url=new URL(location.href);url.hash='';history.replaceState(null,'',url);
+ }catch(error){toast(error.message||'更新失败，原记录已保留或备份');}
+ finally{detailImportBusy=false;}
+};
 function loadCourseLink(){
  const params=new URLSearchParams(location.hash.slice(1));
+ if(params.has('gpt-details')){
+  try{const encoded=params.get('gpt-details');if(encoded.length>90000)throw Error('详情更新链接过长');const bytes=Uint8Array.from(atob(encoded.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));detailPayload=readDetailPayload(JSON.parse(new TextDecoder().decode(bytes)));previewDetailImport();if(!$('#detail-import-dialog').open)$('#detail-import-dialog').showModal();}catch(error){toast(error.message||'详情更新链接无效');}return;
+ }
  if(params.has('remove-course')){
   try{const name=params.get('remove-course');tasksForCourse(state.tasks,name);pendingCourseRemoval=name;previewCourseRemoval();if(!$('#remove-course-dialog').open)$('#remove-course-dialog').showModal();}catch{toast('删除链接中的课程名称不正确');}
   return;

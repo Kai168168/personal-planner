@@ -13,7 +13,7 @@ export function validState(s) {
  const deleted=v=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.entries(v).every(([key,at])=>id(key)&&timestamp(at));
  return !!(s&&s.version===1&&(s.assets===null||timestamp(s.assets))&&Array.isArray(s.tasks)&&Array.isArray(s.expenses)&&
   (s.sync===undefined||(s.sync&&timestamp(s.sync.assetsAt)&&deleted(s.sync.deletedTasks)&&deleted(s.sync.deletedExpenses)))&&
-  s.tasks.every(t=>t&&id(t.id)&&text(t.title)&&validDate(t.date)&&text(t.note)&&(t.time===''||time(t.time))&&(t.endTime===undefined||validTimeRange(t.time,t.endTime))&&['blue','purple','amber','green'].includes(t.color)&&['pending','done','missed'].includes(t.status)&&(t.updatedAt===undefined||timestamp(t.updatedAt)))&&
+  s.tasks.every(t=>t&&id(t.id)&&text(t.title)&&validDate(t.date)&&text(t.note)&&(t.time===''||time(t.time))&&(t.endTime===undefined||validTimeRange(t.time,t.endTime))&&['blue','purple','amber','green'].includes(t.color)&&['pending','done','missed'].includes(t.status)&&(t.updatedAt===undefined||timestamp(t.updatedAt))&&(t.gptDetail===undefined||(t.gptDetail&&t.gptDetail.source==='gpt'&&text(t.gptDetail.text)&&t.gptDetail.text.length<=12000)))&&
   s.expenses.every(e=>e&&id(e.id)&&text(e.title)&&validDate(e.date)&&Number.isSafeInteger(e.amount)&&e.amount>0&&categories.includes(e.category)&&(e.updatedAt===undefined||timestamp(e.updatedAt))));
 }
 
