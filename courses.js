@@ -14,7 +14,13 @@ export function readCourseTemplate(value){
   if(!c||!Number.isInteger(c.day)||c.day<0||c.day>6||typeof c.title!=='string'||!c.title.trim()||c.title.length>100||!validTimeRange(c.time,c.endTime)||(c.note!==undefined&&(typeof c.note!=='string'||c.note.length>300)))throw Error('课程名称、星期或时间区间不正确');
   return {day:c.day,title:c.title.trim(),time:c.time,endTime:c.endTime,note:c.note||''};
  });
- return {kind:'planner-course-import',version:1,start:value.start,end:value.end,schedule};
+ const replaceImported=value.replaceImported||[];
+ if(!Array.isArray(replaceImported)||replaceImported.length>20)throw Error('旧课程替换规则不正确');
+ const replacements=replaceImported.map(rule=>{
+  if(!rule||typeof rule.title!=='string'||!rule.title.trim()||rule.title.length>100||!validTimeRange(rule.time,rule.endTime)||!Array.isArray(rule.days)||!rule.days.length||rule.days.some(day=>!Number.isInteger(day)||day<0||day>6))throw Error('旧课程替换规则不正确');
+  return {title:rule.title.trim(),time:rule.time,endTime:rule.endTime,days:[...new Set(rule.days)]};
+ });
+ return {kind:'planner-course-import',version:1,start:value.start,end:value.end,schedule,...(replacements.length?{replaceImported:replacements}:{})};
 }
 function signature(t){return [t.date,t.title.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase(),t.time,t.endTime||''].join('|');}
 function courseId(task){let hash=2166136261;for(const char of signature(task))hash=Math.imul(hash^char.codePointAt(0),16777619)>>>0;return `course-v1-${task.date}-${hash.toString(16)}`;}
@@ -29,4 +35,10 @@ export function courseTasks(value){
 export function newCourseTasks(existing,candidates,deleted={}){
  const ids=new Set(existing.map(t=>t.id)),seen=new Set(existing.map(signature));
  return candidates.filter(t=>{const key=signature(t);if(ids.has(t.id)||Object.prototype.hasOwnProperty.call(deleted,t.id)||seen.has(key))return false;ids.add(t.id);seen.add(key);return true;});
+}
+
+export function replacedCourseTasks(existing,value){
+ const template=readCourseTemplate(value),rules=template.replaceImported||[];
+ const title=text=>text.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase();
+ return existing.filter(task=>task.id.startsWith('course-v1-')&&task.date>=template.start&&task.date<=template.end&&rules.some(rule=>title(task.title)===title(rule.title)&&task.time===rule.time&&task.endTime===rule.endTime&&rule.days.includes((new Date(task.date+'T12:00:00').getDay()+6)%7)));
 }

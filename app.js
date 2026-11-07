@@ -2,7 +2,7 @@ import {dateKey,monday,addDays,validState,taskColor,validTimeRange,isoWeek} from
 import {CloudClient,validCloudConfig} from './cloud.js?v=5';
 import {mergeStates,syncMeta,sameState} from './sync-model.js?v=5';
 import {cloudConfig} from './sync-config.js?v=6';
-import {readCourseTemplate,courseTasks,newCourseTasks} from './courses.js?v=9';
+import {readCourseTemplate,courseTasks,newCourseTasks,replacedCourseTasks} from './courses.js?v=12';
 const $ = s => document.querySelector(s);
 let key='daybyday.v1';
 let editingTaskId=null;
@@ -82,7 +82,7 @@ $('#new-task').onclick=()=>openTask(); $('#prev-week').onclick=()=>chooseWeek(ad
 let courseImportBusy=false,courseTemplate=null;
 function previewCourses(){
  const f=$('#course-form');
- try{if(!courseTemplate)throw Error('请选择课表文件或打开你的课表导入链接');const candidates=courseTasks({...courseTemplate,start:f.elements.start.value,end:f.elements.end.value});$('#course-count').textContent=`共 ${candidates.length} 节课程，按所选日期范围每周重复。`;$('#import-courses-submit').textContent=`导入 ${candidates.length} 节课程`;}
+ try{if(!courseTemplate)throw Error('请选择课表文件或打开你的课表导入链接');const candidates=courseTasks({...courseTemplate,start:f.elements.start.value,end:f.elements.end.value});const rules=courseTemplate.replaceImported||[];$('#course-count').textContent=`共 ${candidates.length} 节课程，按所选日期范围每周重复。${rules.length?'将替换该范围内旧导入的 '+rules.map(rule=>rule.title+' '+rule.time+'–'+rule.endTime).join('、')+'，手动添加的任务不受影响。':''}`;$('#import-courses-submit').textContent=`${rules.length?'更新':'导入'} ${candidates.length} 节课程`;}
  catch(error){$('#course-count').textContent=error.message;$('#import-courses-submit').textContent='导入课程';}
 }
 function setCourseTemplate(value){
@@ -111,11 +111,18 @@ async function importCourses(start,end){
    if(!syncBusy)await Promise.race([runSync(),new Promise(resolve=>setTimeout(resolve,10000))]);
   }
   if(key!==targetKey){toast('账号已切换，请重新导入课程');return;}
+  const removals=replacedCourseTasks(state.tasks,{...courseTemplate,start,end});
+  if(removals.length){
+   localStorage.setItem(key+'.before-course-update',JSON.stringify(state));
+   const removedIds=new Set(removals.map(task=>task.id));
+   for(const task of removals)syncMeta(state).deletedTasks[task.id]=stamp();
+   state.tasks=state.tasks.filter(task=>!removedIds.has(task.id));
+  }
   const additions=newCourseTasks(state.tasks,candidates,syncMeta(state).deletedTasks);
   for(const task of additions)state.tasks.push({...task,updatedAt:stamp()});
   week=monday(new Date(start+'T12:00:00'));save();
   const skipped=candidates.length-additions.length;
-  $('#course-result').textContent=`${start} — ${end}：已加入 ${additions.length} 节课程${skipped?`，跳过 ${skipped} 节已存在或已删除课程`:''}。`;
+  $('#course-result').textContent=`${start} — ${end}：已加入 ${additions.length} 节课程${removals.length?`，替换 ${removals.length} 节旧课`:''}${skipped?`，跳过 ${skipped} 节已存在或已删除课程`:''}。`;
   $('#course-result').hidden=false;$('#course-dialog').close();
   const url=new URL(location.href);url.hash='';history.replaceState(null,'',url);
  }catch{toast('导入失败，已有记录保留，请重试');}
