@@ -1,4 +1,4 @@
-import {categories,dateKey,monday,addDays,money,totals,validState,taskColor,validTimeRange,isoWeek} from './model.js?v=10';
+import {dateKey,monday,addDays,validState,taskColor,validTimeRange,isoWeek} from './model.js?v=10';
 import {CloudClient,validCloudConfig} from './cloud.js?v=5';
 import {mergeStates,syncMeta,sameState} from './sync-model.js?v=5';
 import {cloudConfig} from './sync-config.js?v=6';
@@ -70,9 +70,7 @@ function renderPlan(){
  }).join('');
  updateProgress();renderWeeks();
 }
-const icons=['◒','↗','▧','⌂','♫','▤','♡','⋯'];
-function renderMoney(){ const t=totals(state.expenses,state.assets); $('#assets-value').textContent=state.assets===null?'待设置':money(state.assets); $('#balance-value').textContent=t.balance===null?'—':money(t.balance); $('#week-value').textContent=money(t.week); $('#month-value').textContent=money(t.month); $('#month-caption').textContent=`${new Date().getFullYear()}年 ${new Date().getMonth()+1}月`; $('#expense-total').textContent=`共 ${state.expenses.length} 笔 · ${money(t.all)}`; $('#expense-list').innerHTML=[...state.expenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>`<div class="expense-row"><span class="category-icon">${icons[categories.indexOf(e.category)]}</span><div class="expense-info"><strong>${escape(e.title)}</strong><small>${escape(e.date)} · ${escape(e.category)}</small></div><span class="expense-amount">−${money(e.amount)}</span><button class="delete-expense" data-id="${escape(e.id)}" aria-label="删除开销">×</button></div>`).join('')||'<p class="empty">暂无开销记录</p>'; const groups=categories.map(category=>({category,amount:state.expenses.filter(e=>e.category===category&&e.date.startsWith(dateKey().slice(0,7))).reduce((s,e)=>s+e.amount,0)})).filter(g=>g.amount).sort((a,b)=>b.amount-a.amount); $('#categories').innerHTML=groups.map(g=>`<div class="category-row"><div class="category-label"><span>${g.category}</span><span>${money(g.amount)} · ${Math.round(g.amount/t.month*100)}%</span></div><div class="bar"><i style="width:${g.amount/t.month*100}%"></i></div></div>`).join('')||'<p class="empty">本月暂无开销</p>'; }
-function render(){renderPlan();renderMoney();}
+function render(){renderPlan();}
 function openTask(date=dateKey(),task=null){
  const f=$('#task-form');f.reset();editingTaskId=task?.id||null;f.elements.date.value=task?.date||date;
  for(const name of ['title','time','endTime','note'])f.elements[name].value=task?.[name]||'';
@@ -80,7 +78,6 @@ function openTask(date=dateKey(),task=null){
 }
 function checkTimes(){const f=$('#task-form');f.elements.endTime.setCustomValidity(validTimeRange(f.elements.time.value,f.elements.endTime.value)?'':'结束时间必须晚于开始时间');}
 $('#task-form [name=time]').oninput=checkTimes;$('#task-form [name=endTime]').oninput=checkTimes;
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t===b));document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!==b.dataset.view);});
 $('#new-task').onclick=()=>openTask(); $('#prev-week').onclick=()=>chooseWeek(addDays(week,-7)); $('#next-week').onclick=()=>chooseWeek(addDays(week,7)); $('#this-week').onclick=()=>chooseWeek(new Date());
 let courseImportBusy=false,courseTemplate=null;
 function previewCourses(){
@@ -149,12 +146,6 @@ function toggleTask(id){
  writeLocal();queueSync();updateProgress();renderWeeks();
  if(!matchMedia('(prefers-reduced-motion: reduce)').matches)card.animate([{transform:'scale(1)'},{transform:'scale(0.975)'},{transform:'scale(1)'}],{duration:260,easing:'ease-out'});
 }
-$('#edit-assets').onclick=()=>{const f=$('#asset-form');f.elements.amount.value=state.assets===null?'':state.assets/100;$('#asset-dialog').showModal();};
-$('#asset-form').onsubmit=e=>{e.preventDefault();state.assets=Math.round(Number(e.currentTarget.elements.amount.value)*100);syncMeta(state).assetsAt=stamp();save();$('#asset-dialog').close();toast('总资产已更新');};
-$('#category-select').innerHTML=categories.map(c=>`<option>${c}</option>`).join('');
-$('#new-expense').onclick=()=>{if(state.assets===null){toast('请先输入总资产，再记录开销');$('#edit-assets').click();return;}$('#expense-form').reset();$('#expense-form').elements.date.value=dateKey();$('#expense-dialog').showModal();};
-$('#expense-form').onsubmit=e=>{e.preventDefault();const f=e.currentTarget,title=f.elements.title.value.trim(),amount=Math.round(Number(f.elements.amount.value)*100);if(!title||amount<=0)return;state.expenses.push({id:crypto.randomUUID(),updatedAt:stamp(),title,amount,date:f.elements.date.value,category:f.elements.category.value});save();$('#expense-dialog').close();toast('已记下这笔开销');};
-$('#expense-list').onclick=e=>{const b=e.target.closest('.delete-expense');if(!b||!confirm('删除这笔开销？剩余资产将同步恢复。'))return;syncMeta(state).deletedExpenses[b.dataset.id]=stamp();state.expenses=state.expenses.filter(x=>x.id!==b.dataset.id);save();};
 $('#export-data').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`日序备份-${dateKey()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('#import-data').onclick=()=>$('#import-file').click();$('#import-file').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const next=JSON.parse(await file.text());if(!validState(next))throw Error();if(confirm(cloud?.session?'导入的记录将与此账号合并，同一记录保留较新的修改。继续？':'导入会替换当前数据，请确保已经备份。继续？')){state=cloud?.session?mergeStates(state,next):next;save();toast('备份已恢复');}}catch{toast('备份格式有误，未导入任何数据');}e.target.value='';};
 render();if(storageFailed)toast('无法读取本地记录，请检查浏览器存储或导入备份。');
