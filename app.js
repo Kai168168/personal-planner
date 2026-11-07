@@ -2,10 +2,10 @@ import {dateKey,monday,addDays,validState,taskColor,validTimeRange,isoWeek} from
 import {CloudClient,validCloudConfig} from './cloud.js?v=5';
 import {mergeStates,syncMeta,sameState} from './sync-model.js?v=5';
 import {cloudConfig} from './sync-config.js?v=6';
-import {readCourseTemplate,courseTasks,newCourseTasks,replacedCourseTasks} from './courses.js?v=12';
+import {readCourseTemplate,courseTasks,newCourseTasks,replacedCourseTasks,tasksForCourse} from './courses.js?v=13';
 const $ = s => document.querySelector(s);
 let key='daybyday.v1';
-let editingTaskId=null;
+let editingTaskId=null,pendingCourseRemoval=null,courseDeletionBusy=false;
 const guestKey='daybyday.v1';
 let cloud=null,syncTimer,syncBusy=false,syncAgain=false,lastStamp=0;
 let state={version:1,assets:null,tasks:[],expenses:[]}, week=monday();
@@ -70,7 +70,7 @@ function renderPlan(){
  }).join('');
  updateProgress();renderWeeks();
 }
-function render(){renderPlan();}
+function render(){renderPlan();if(pendingCourseRemoval)previewCourseRemoval();}
 function openTask(date=dateKey(),task=null){
  const f=$('#task-form');f.reset();editingTaskId=task?.id||null;f.elements.date.value=task?.date||date;
  for(const name of ['title','time','endTime','note'])f.elements[name].value=task?.[name]||'';
@@ -128,6 +128,32 @@ async function importCourses(start,end){
  }catch{toast('导入失败，已有记录保留，请重试');}
  finally{courseImportBusy=false;$('#import-courses-submit').disabled=false;previewCourses();}
 }
+function previewCourseRemoval(){
+ const matches=tasksForCourse(state.tasks,pendingCourseRemoval);
+ $('#remove-course-name').textContent=pendingCourseRemoval;
+ $('#remove-course-count').textContent=matches.length?`找到 ${matches.length} 项，包含所有日期的同名课程。确认后仅删除这些计划。`:'当前浏览器或账号没有找到此课程。请确认使用保存计划的同一浏览器或账号。';
+ $('#remove-course-list').innerHTML=matches.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(t=>`<div class="course-row"><span>${escape(t.title)}</span><time>${escape(t.date)} ${escape(t.time)}${t.endTime?'–'+escape(t.endTime):''}</time></div>`).join('');
+ $('#remove-course-submit').disabled=courseDeletionBusy||!matches.length;
+ $('#remove-course-submit').textContent=courseDeletionBusy?'正在删除…':`删除这 ${matches.length} 项课程`;
+}
+$('#remove-course-form').onsubmit=async e=>{
+ e.preventDefault();if(courseDeletionBusy||!pendingCourseRemoval)return;
+ const target=key,name=pendingCourseRemoval;courseDeletionBusy=true;previewCourseRemoval();
+ try{
+  if(cloud?.session&&navigator.onLine){const deadline=Date.now()+10000;while(syncBusy&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,100));if(!syncBusy)await Promise.race([runSync(),new Promise(resolve=>setTimeout(resolve,10000))]);}
+  if(key!==target||pendingCourseRemoval!==name){toast('账号已切换，请重新打开删除链接');return;}
+  const matches=tasksForCourse(state.tasks,name);
+  if(matches.length){
+   localStorage.setItem(key+'.before-course-delete',JSON.stringify(state));
+   const ids=new Set(matches.map(t=>t.id));for(const task of matches)syncMeta(state).deletedTasks[task.id]=stamp();
+   state.tasks=state.tasks.filter(t=>!ids.has(t.id));save();
+  }
+  $('#course-result').textContent=`已删除 ${matches.length} 项 ${name}，其他计划保留。`;$('#course-result').hidden=false;
+  $('#remove-course-dialog').close();pendingCourseRemoval=null;
+  const url=new URL(location.href);url.hash='';history.replaceState(null,'',url);
+ }catch{toast('删除未完成，请重试；原记录已保留或备份。');}
+ finally{courseDeletionBusy=false;if(pendingCourseRemoval)previewCourseRemoval();}
+};
 $('#course-form').onsubmit=e=>{e.preventDefault();const f=e.currentTarget;importCourses(f.elements.start.value,f.elements.end.value);};
 document.querySelectorAll('.close').forEach(b=>b.onclick=()=>b.closest('dialog').close());
 $('#task-form').onsubmit=e=>{
@@ -237,7 +263,12 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 initCloud();
 
 function loadCourseLink(){
- const encodedCourses=new URLSearchParams(location.hash.slice(1)).get('course-import');
+ const params=new URLSearchParams(location.hash.slice(1));
+ if(params.has('remove-course')){
+  try{const name=params.get('remove-course');tasksForCourse(state.tasks,name);pendingCourseRemoval=name;previewCourseRemoval();if(!$('#remove-course-dialog').open)$('#remove-course-dialog').showModal();}catch{toast('删除链接中的课程名称不正确');}
+  return;
+ }
+ const encodedCourses=params.get('course-import');
  if(!encodedCourses)return;
  try{
   if(encodedCourses.length>90000)throw Error();

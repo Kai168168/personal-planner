@@ -42,3 +42,10 @@ export function replacedCourseTasks(existing,value){
  const title=text=>text.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase();
  return existing.filter(task=>task.id.startsWith('course-v1-')&&task.date>=template.start&&task.date<=template.end&&rules.some(rule=>title(task.title)===title(rule.title)&&task.time===rule.time&&task.endTime===rule.endTime&&rule.days.includes((new Date(task.date+'T12:00:00').getDay()+6)%7)));
 }
+
+export function tasksForCourse(tasks,name){
+ const normalize=text=>text.normalize('NFKC').trim().replace(/\s+/g,'').toUpperCase().replace(/^体育(?=\d)/,'PHYSEDU');
+ const target=typeof name==='string'?normalize(name):'';
+ if(!target||target.length>100)throw Error('课程名称不正确');
+ return tasks.filter(task=>normalize(task.title)===target);
+}

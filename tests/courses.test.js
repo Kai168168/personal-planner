@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {courseTasks,newCourseTasks,readCourseTemplate,replacedCourseTasks} from '../courses.js';
+import {courseTasks,newCourseTasks,readCourseTemplate,replacedCourseTasks,tasksForCourse} from '../courses.js';
 import {validState} from '../model.js';
 const template={kind:'planner-course-import',version:1,start:'2026-10-26',end:'2026-12-10',schedule:[{day:0,title:'示例课程 A',time:'09:00',endTime:'10:00',note:'教室 A'},{day:3,title:'示例课程 B',time:'14:45',endTime:'17:45',note:'实验课'}]};
 test('含首尾按星期重复，不扩展到所选区间之外',()=>{const tasks=courseTasks(template);assert.equal(tasks.length,14);assert.equal(tasks[0].date,'2026-10-26');assert.equal(tasks.at(-1).date,'2026-12-10');assert.equal(tasks.at(-1).endTime,'17:45');assert.ok(validState({version:1,assets:null,tasks,expenses:[]}));assert.equal(new Set(tasks.map(t=>t.id)).size,14);assert.equal(courseTasks({...template,start:'2026-10-27',end:'2026-12-09'}).length,12);});
@@ -14,4 +14,9 @@ test('替换范围仅限精确匹配的旧导入课程，不删除手动或范�
  assert.deepEqual(replacedCourseTasks(existing,replacement),[old]);
  assert.equal(replacedCourseTasks(existing,template).length,0);
  assert.throws(()=>readCourseTemplate({...template,replaceImported:[{title:'旧课',time:'10:00',endTime:'11:00',days:[8]}]}));
+});
+
+test('指定课程删除覆盖导入和手工记录，仅精确匹配课程号',()=>{
+ const tasks=[{id:'a',title:'PHYSEDU 120A'},{id:'manual',title:'体育120A'},{id:'c',title:'PHYSEDU 145A'},{id:'d',title:'PHYSEDU 120AB'}];
+ assert.deepEqual(tasksForCourse(tasks,'PHYSEDU 120A').map(t=>t.id),['a','manual']);assert.deepEqual(tasksForCourse(tasks,'体育 120a').map(t=>t.id),['a','manual']);assert.throws(()=>tasksForCourse(tasks,''));
 });
