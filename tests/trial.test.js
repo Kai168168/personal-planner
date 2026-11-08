@@ -1,0 +1,7 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readTrial,planTrial} from '../trial.js';
+const value={kind:'planner-trial-import',version:1,start:'2026-11-09',end:'2026-11-22',schedule:[{day:0,title:'早训',time:'07:00',endTime:'08:00',note:'短备注',detail:'训练说明'},{day:0,title:'数学',time:'10:00',endTime:'11:30'}]};
+test('两周新增任务含独立训练详情，普通学习任务无详情',()=>{const p=planTrial([],value);assert.equal(p.additions.length,4);assert.deepEqual(p.additions[0].gptDetail,{source:'gpt',text:'训练说明'});assert.equal(p.additions[2].gptDetail,undefined);assert.ok(p.additions.every(t=>t.date>='2026-11-09'&&t.date<='2026-11-22'));});
+test('重复导入不新增，保留状态短备注及范围外任务',()=>{const tasks=planTrial([],value).additions;tasks[0].status='done';tasks[0].note='用户备注';tasks[0].gptDetail.text='旧说明';const outside={...tasks[0],id:'outside',date:'2026-11-08'};const p=planTrial([...tasks,outside],value);assert.equal(p.additions.length,0);assert.equal(p.updates.length,1);assert.equal(p.updates[0].status,'done');assert.equal(p.updates[0].note,'用户备注');assert.equal(p.updates[0].id,tasks[0].id);});
+test('尊重删除记录并提示时间重叠，拒绝超出两周和非法内容',()=>{const p=planTrial([],value);assert.equal(planTrial([],value,{[p.additions[0].id]:1}).additions.length,3);assert.ok(planTrial([{id:'manual',date:'2026-11-09',title:'其他任务',time:'07:30',endTime:'08:30'}],value).conflicts.length);assert.throws(()=>readTrial({...value,end:'2026-11-23'}));assert.throws(()=>readTrial({...value,schedule:[{...value.schedule[0],detail:42}]}));});

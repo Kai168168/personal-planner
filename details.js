@@ -41,7 +41,7 @@ export function planDetailUpdates(tasks,value){
  })};
 }
 
-export async function decodeDetailPayload(encoded,compressed=false){
+export async function decodeLinkJSON(encoded,compressed=false){
  if(typeof encoded!=='string'||encoded.length>90000)throw Error('详情更新链接过长');
  const bytes=Uint8Array.from(atob(encoded.replace(/-/g,'+').replace(/_/g,'/')),char=>char.charCodeAt(0));
  let data=bytes;
@@ -52,5 +52,7 @@ export async function decodeDetailPayload(encoded,compressed=false){
   data=new Uint8Array(total);let offset=0;for(const chunk of chunks){data.set(chunk,offset);offset+=chunk.length;}
  }
  if(data.length>65536)throw Error('详情内容过长，请分批更新');
- return readDetailPayload(JSON.parse(new TextDecoder().decode(data)));
+ return JSON.parse(new TextDecoder().decode(data));
 }
+
+export async function decodeDetailPayload(encoded,compressed=false){return readDetailPayload(await decodeLinkJSON(encoded,compressed));}
