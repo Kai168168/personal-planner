@@ -3,7 +3,7 @@ import {CloudClient,validCloudConfig} from './cloud.js?v=5';
 import {mergeStates,syncMeta,sameState} from './sync-model.js?v=5';
 import {cloudConfig} from './sync-config.js?v=6';
 import {readCourseTemplate,courseTasks,newCourseTasks,replacedCourseTasks,tasksForCourse} from './courses.js?v=13';
-import {getTaskDetail,readDetailPayload,planDetailUpdates} from './details.js?v=14';
+import {getTaskDetail,planDetailUpdates,decodeDetailPayload} from './details.js?v=15';
 const $ = s => document.querySelector(s);
 let key='daybyday.v1';
 let editingTaskId=null,pendingCourseRemoval=null,courseDeletionBusy=false;
@@ -326,7 +326,11 @@ initCloud();
 function previewDetailImport(){
  const planned=planDetailUpdates(state.tasks,detailPayload);
  $('#detail-import-summary').textContent=`匹配 ${planned.matched} 项任务，将更新 ${planned.changes.length} 项详细备注${planned.unmatched?`；${planned.unmatched} 条说明未找到匹配任务`:''}。短备注、时间和完成状态保持原样，除非导入内容明确包含短备注更新。${planned.matched?'':'请在保存计划的同一浏览器或账号打开，并核对任务名称。'}`;
- $('#detail-import-preview').innerHTML=detailPayload.entries.map(entry=>`<section class="detail-import-entry"><strong>${escape(entry.match.title||entry.match.id)}</strong><p>${escape(entry.text||'清除详细备注')}</p></section>`).join('');
+ $('#detail-import-preview').innerHTML=detailPayload.entries.map((entry,index)=>{
+  const days=['周一','周二','周三','周四','周五','周六','周日'];
+  const scope=[entry.match.weekdays?.map(day=>days[day]).join('、'),entry.match.start&&entry.match.end?entry.match.start+' — '+entry.match.end:'',`匹配 ${planned.entryMatches[index]} 项`].filter(Boolean).join(' · ');
+  return `<section class="detail-import-entry"><strong>${escape(entry.label||entry.match.title||entry.match.id)}</strong><small class="detail-import-scope">${escape(scope)}</small><p>${escape(entry.text||'清除详细备注')}</p></section>`;
+ }).join('');
  $('#detail-import-submit').disabled=detailImportBusy||!planned.changes.length;
  $('#detail-import-submit').textContent=detailImportBusy?'正在更新…':`更新 ${planned.changes.length} 项详情`;
 }
@@ -346,10 +350,10 @@ $('#detail-import-form').onsubmit=async e=>{
  }catch(error){toast(error.message||'更新失败，原记录已保留或备份');}
  finally{detailImportBusy=false;}
 };
-function loadCourseLink(){
+async function loadCourseLink(){
  const params=new URLSearchParams(location.hash.slice(1));
- if(params.has('gpt-details')){
-  try{const encoded=params.get('gpt-details');if(encoded.length>90000)throw Error('详情更新链接过长');const bytes=Uint8Array.from(atob(encoded.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));detailPayload=readDetailPayload(JSON.parse(new TextDecoder().decode(bytes)));previewDetailImport();if(!$('#detail-import-dialog').open)$('#detail-import-dialog').showModal();}catch(error){toast(error.message||'详情更新链接无效');}return;
+ if(params.has('gpt-details')||params.has('gpt-details-gz')){
+  try{const hash=location.hash,compressed=params.has('gpt-details-gz'),payload=await decodeDetailPayload(params.get(compressed?'gpt-details-gz':'gpt-details'),compressed);if(location.hash!==hash)return;detailPayload=payload;previewDetailImport();if(!$('#detail-import-dialog').open)$('#detail-import-dialog').showModal();}catch(error){toast(error.message||'详情更新链接无效');}return;
  }
  if(params.has('remove-course')){
   try{const name=params.get('remove-course');tasksForCourse(state.tasks,name);pendingCourseRemoval=name;previewCourseRemoval();if(!$('#remove-course-dialog').open)$('#remove-course-dialog').showModal();}catch{toast('删除链接中的课程名称不正确');}
