@@ -1,3 +1,4 @@
+import {readingChanges} from './reading.js?v=17';
 import {readTrial,planTrial} from './trial.js?v=16';
 import {dateKey,monday,addDays,validState,taskColor,validTimeRange,isoWeek} from './model.js?v=14';
 import {CloudClient,validCloudConfig} from './cloud.js?v=5';
@@ -7,6 +8,7 @@ import {readCourseTemplate,courseTasks,newCourseTasks,replacedCourseTasks,tasksF
 import {getTaskDetail,planDetailUpdates,decodeDetailPayload,decodeLinkJSON} from './details.js?v=16';
 const $ = s => document.querySelector(s);
 let trialPayload=null,trialBusy=false;
+let readingRange=null,readingBusy=false;
 let key='daybyday.v1';
 let editingTaskId=null,pendingCourseRemoval=null,courseDeletionBusy=false;
 let activeDetailId=null,detailPayload=null,detailImportBusy=false;
@@ -75,7 +77,7 @@ function renderPlan(){
  }).join('');
  updateProgress();renderWeeks();
 }
-function render(){cancelTaskHold();renderPlan();if(pendingCourseRemoval)previewCourseRemoval();if(activeDetailId)refreshTaskDetail();if(detailPayload&&$('#detail-import-dialog').open)previewDetailImport();if(trialPayload&&$('#trial-dialog').open)previewTrial();}
+function render(){cancelTaskHold();renderPlan();if(pendingCourseRemoval)previewCourseRemoval();if(activeDetailId)refreshTaskDetail();if(detailPayload&&$('#detail-import-dialog').open)previewDetailImport();if(trialPayload&&$('#trial-dialog').open)previewTrial();if(readingRange&&$('#reading-dialog').open)previewReading();}
 function openTask(date=dateKey(),task=null){
  const f=$('#task-form');f.reset();editingTaskId=task?.id||null;f.elements.date.value=task?.date||date;
  for(const name of ['title','time','endTime','note'])f.elements[name].value=task?.[name]||'';
@@ -373,8 +375,26 @@ $('#trial-form').onsubmit=async e=>{
   toast(`已加入 ${plan.additions.length} 项计划，更新 ${plan.updates.length} 项详情`);
  }catch(error){toast(error.message||'加入失败，请重试');}finally{trialBusy=false;previewTrial();}
 };
+function previewReading(){
+ const plan=readingChanges(state.tasks,...readingRange);
+ $('#reading-summary').textContent=`${readingRange[0]} — ${readingRange[1]}：将修改 ${plan.changes.length} 项晚间阅读，时间和完成状态保留。${plan.unmatched.length?'另有 '+plan.unmatched.length+' 项找不到前一个数学或化学项目，暂不修改。':''}`;
+ $('#reading-preview').innerHTML=plan.changes.map(t=>`<div class="course-row"><span>${escape(t.date)} · 阅读 → ${escape(t.title)}</span><time>${escape(t.time)}–${escape(t.endTime)}</time><small>前一个学习项目：${escape(t.previous)}</small></div>`).join('');
+ $('#reading-submit').disabled=readingBusy||!plan.changes.length;$('#reading-submit').textContent=readingBusy?'正在修改…':`修改 ${plan.changes.length} 项阅读`;
+}
+$('#reading-form').onsubmit=async e=>{
+ e.preventDefault();if(readingBusy||!readingRange)return;readingBusy=true;previewReading();const account=key;
+ try{
+  if(cloud?.session&&navigator.onLine){const deadline=Date.now()+10000;while(syncBusy&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,100));if(!syncBusy)await Promise.race([runSync(),new Promise(resolve=>setTimeout(resolve,10000))]);}
+  if(key!==account)throw Error('账号已切换，请重新打开修改链接');
+  const plan=readingChanges(state.tasks,...readingRange),patches=new Map(plan.changes.map(t=>[t.id,t]));
+  localStorage.setItem(key+'.before-reading-change',JSON.stringify(state));
+  state.tasks=state.tasks.map(t=>patches.has(t.id)?{...t,title:patches.get(t.id).title,note:patches.get(t.id).note,updatedAt:stamp()}:t);
+  save();$('#reading-dialog').close();history.replaceState(null,'',location.pathname+location.search);toast(`已修改 ${plan.changes.length} 项晚间阅读`);
+ }catch(error){toast(error.message||'修改失败，请重试');}finally{readingBusy=false;previewReading();}
+};
 async function loadCourseLink(){
  const params=new URLSearchParams(location.hash.slice(1));
+ if(params.has('alternate-reading')){try{const range=params.get('alternate-reading').split(',');if(range.length!==2)throw Error('修改日期范围不正确');readingChanges([], ...range);readingRange=range;previewReading();if(!$('#reading-dialog').open)$('#reading-dialog').showModal();}catch(error){toast(error.message);}return;}
  if(params.has('trial-plan')){try{const hash=location.hash,payload=readTrial(await decodeLinkJSON(params.get('trial-plan'),true));if(location.hash!==hash)return;trialPayload=payload;previewTrial();if(!$('#trial-dialog').open)$('#trial-dialog').showModal();}catch(error){toast(error.message||'计划链接无效');}return;}
  if(params.has('gpt-details')||params.has('gpt-details-gz')){
   try{const hash=location.hash,compressed=params.has('gpt-details-gz'),payload=await decodeDetailPayload(params.get(compressed?'gpt-details-gz':'gpt-details'),compressed);if(location.hash!==hash)return;detailPayload=payload;previewDetailImport();if(!$('#detail-import-dialog').open)$('#detail-import-dialog').showModal();}catch(error){toast(error.message||'详情更新链接无效');}return;
